@@ -70,30 +70,26 @@ pub fn api_response_derive(input: TokenStream) -> TokenStream {
     };
     // TODO Omit unwanted fields
     // attr.path.is_ident("apiResponseSkip")
-    println!("{:?}", fields);
-    let filtered_fileds = fields; //.into_iter().filter(|_|    );
+    let filtered_fileds = fields;
     let response_struct_declaration = get_response_struct_declaration(&ident, &filtered_fileds);
     let response_struct = get_response_struct(&filtered_fileds);
     let temp = response_struct_declaration.ident.clone();
 
-    let expanded = quote! {
+    quote! {
         impl Responder for #ident {
-            type Body = BoxBody;
+            type Body = actix_web::body::BoxBody;
 
-            fn respond_to(self, _req: &HttpRequest) -> HttpResponse<Self::Body> {
-                use actix_web::body::BoxBody;
-                use actix_web::web::Json;
-                use actix_web::{HttpRequest, HttpResponse, Responder};
 
+            fn respond_to(self, _req: &actix_web::HttpRequest) -> actix_web::HttpResponse<Self::Body> {
                 #[derive(Serialize)]
                 #response_struct_declaration
+
                 let response_struct = #temp #response_struct;
                 let body = serde_json::to_string(&response_struct).unwrap();
-                HttpResponse::Ok()
+                actix_web::HttpResponse::Ok()
                     .content_type("application/json")
                     .body(body)
             }
         }
-    };
-    TokenStream::from(expanded)
+    }.into()
 }
