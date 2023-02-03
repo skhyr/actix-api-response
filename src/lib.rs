@@ -1,31 +1,14 @@
 extern crate syn;
 extern crate proc_macro;
-
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::token::Comma;
 use syn::{parse_macro_input, Data, DeriveInput, Fields};
-use syn::{*, punctuated::Punctuated};
-
-
-
-fn get_response_struct_declaration(ident: &Ident, fields: &FieldsNamed) -> ItemStruct {
-    let new_ident = Ident::new(&format!("{}Response", ident), ident.span());
-    ItemStruct {
-        ident: new_ident,
-        fields: Fields::Named(fields.clone()),
-        vis: Visibility::Inherited,
-        struct_token: Default::default(),
-        generics: Default::default(),
-        semi_token: Default::default(),
-        attrs: vec![],
-    }
-}
+use syn::*;
 
 fn construct_field_value(field: &Field) -> FieldValue{
     FieldValue {
             member: Member::Named(field.ident.clone().unwrap()),
-            attrs: vec![],
+            attrs: field.attrs.clone(),
             expr: Expr::Field(ExprField {
                 attrs: vec![],
                 base: Box::new(Expr::Path(ExprPath {
@@ -38,22 +21,6 @@ fn construct_field_value(field: &Field) -> FieldValue{
             }),
             colon_token: Some(syn::token::Colon::default()),
     }
-}
-
-fn get_response_struct(fields: &FieldsNamed) -> Expr {
-    let field_values: Punctuated<FieldValue, Comma> = Punctuated::from_iter(fields.named.iter()
-                        .map(|field| construct_field_value(field) ));
-    Expr::Struct(ExprStruct {
-        attrs: vec![],
-        brace_token: syn::token::Brace::default(),
-        fields: field_values,
-        dot2_token: None,
-        rest: None,
-        path: Path {
-            leading_colon: None,
-            segments: Punctuated::new(),
-        },
-    })
 }
 
 #[proc_macro_derive(ApiResponse, attributes(apiResponseSkip))]
@@ -70,21 +37,22 @@ pub fn api_response_derive(input: TokenStream) -> TokenStream {
     };
     // TODO Omit unwanted fields
     // attr.path.is_ident("apiResponseSkip")
-    let filtered_fileds = fields;
-    let response_struct_declaration = get_response_struct_declaration(&ident, &filtered_fileds);
-    let response_struct = get_response_struct(&filtered_fileds);
-    let temp = response_struct_declaration.ident.clone();
+    let response_ident = Ident::new(&format!("{}Response", ident), ident.span());
+    let filtered_fileds = fields.named.iter();
+    let field_values = fields.named.iter().map(|f| construct_field_value(f));
 
     quote! {
         impl Responder for #ident {
             type Body = actix_web::body::BoxBody;
 
-
             fn respond_to(self, _req: &actix_web::HttpRequest) -> actix_web::HttpResponse<Self::Body> {
                 #[derive(Serialize)]
-                #response_struct_declaration
-
-                let response_struct = #temp #response_struct;
+                struct #response_ident {
+                    #(#filtered_fileds.iter()),*
+                }
+                let response_object = #response_ident {
+                    #(#field_values),*
+                };
                 let body = serde_json::to_string(&response_struct).unwrap();
                 actix_web::HttpResponse::Ok()
                     .content_type("application/json")
